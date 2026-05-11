@@ -1,0 +1,80 @@
+# Version: 1
+# Changelog:
+# - Initial version: Setup macOS environment, JDK 21, and WebRTC framework.
+# - Added: Build process for iOS Simulator target to bypass mandatory signing.
+# - Added: Manual IPA packaging (Payload folder) for sideloading support.
+# - Added: Automatic release creation and asset upload.
+
+name: Build Unsigned iOS IPA
+
+on:
+  push:
+    tags:
+      - 'v*' # Se activa al crear un tag como v1.0.0
+  workflow_dispatch: # Permite ejecución manual
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup WebRTC Framework
+        run: |
+          curl -L "https://github.com/teancom/webrtc/releases/download/m125-cow-bloat-fix.1/WebRTC.xcframework.m125-cow-bloat-fix.1.zip" -o /tmp/WebRTC.xcframework.zip
+          mkdir -p iosApp/Frameworks
+          unzip /tmp/WebRTC.xcframework.zip -d iosApp/Frameworks/
+          # La estructura debe quedar en iosApp/Frameworks/WebRTC.xcframework
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Make Gradle Executable
+        run: chmod +x ./gradlew
+
+      - name: Build Unsigned App
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
+        run: |
+          xcodebuild \
+            -project iosApp/iosApp.xcodeproj \
+            -scheme iosApp \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            clean build
+
+      - name: Package IPA (Unsigned)
+        run: |
+          # Crear carpeta Payload para formato IPA
+          mkdir -p build/ios/Payload
+          # Localizar el .app generado (ajusta la ruta si el DerivedData cambia)
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "MusicAssistantClient.app" -type d | head -n 1)
+          cp -R "$APP_PATH" build/ios/Payload/
+          cd build/ios
+          zip -r MusicAssistantClient_Unsigned.ipa Payload
+          
+      - name: Create Release and Upload
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: build/ios/MusicAssistantClient_Unsigned.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
