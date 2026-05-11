@@ -1,4 +1,4 @@
-# Version: 3
+# Version: 4
 # Changelog:
 # - Initial version: Setup macOS environment, JDK 21, and WebRTC framework.
 # - Added: Build process for iOS Simulator target to bypass mandatory signing.
@@ -6,6 +6,8 @@
 # - Added: Automatic release creation and asset upload.
 # - Fixed: Added missing 'actions/checkout' step to clone the repository.
 # - Fixed: Explicitly cloning the Music Assistant mobile-app repository as requested.
+# - Improved: Added GitHub Artifacts upload to ensure the IPA is saved even if Release fails.
+# - Improved: Expanded cache to include Kotlin Native dependencies (.konan) for faster builds.
 
 name: Build Unsigned iOS IPA
 
@@ -19,12 +21,11 @@ jobs:
   build:
     runs-on: macos-14
     steps:
-      # Clonamos explícitamente el repo de la aplicación
       - name: Checkout Music Assistant Repo
         uses: actions/checkout@v4
         with:
           repository: music-assistant/mobile-app
-          ref: dev # O la rama que prefieras compilar
+          ref: dev
           submodules: recursive
 
       - name: Set up JDK 21
@@ -39,12 +40,13 @@ jobs:
           mkdir -p iosApp/Frameworks
           unzip /tmp/WebRTC.xcframework.zip -d iosApp/Frameworks/
 
-      - name: Cache Gradle
+      - name: Cache Gradle & Kotlin Native
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
+            ~/.konan
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
@@ -78,11 +80,23 @@ jobs:
           cp -R "$APP_PATH" build/ios/Payload/
           cd build/ios
           zip -r MusicAssistantClient_Unsigned.ipa Payload
-          
+          echo "IPA_PATH=$GITHUB_WORKSPACE/build/ios/MusicAssistantClient_Unsigned.ipa" >> $GITHUB_ENV
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicAssistantClient-Unsigned-IPA
+          path: build/ios/MusicAssistantClient_Unsigned.ipa
+          retention-days: 5
+
       - name: Create Release and Upload
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
           files: build/ios/MusicAssistantClient_Unsigned.ipa
+          tag_name: ${{ github.ref_name == 'dev' && format('manual-{0}', github.run_number) || github.ref_name }}
+          name: ${{ github.ref_name == 'dev' && format('Manual Build {0}', github.run_number) || github.ref_name }}
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
