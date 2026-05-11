@@ -1,11 +1,11 @@
-# Version: 2
+# Version: 3
 # Changelog:
 # - Initial version: Setup macOS environment, JDK 21, and WebRTC framework.
 # - Added: Build process for iOS Simulator target to bypass mandatory signing.
 # - Added: Manual IPA packaging (Payload folder) for sideloading support.
 # - Added: Automatic release creation and asset upload.
 # - Fixed: Added missing 'actions/checkout' step to clone the repository.
-# - Improved: Refined app path search logic for more robust IPA packaging.
+# - Fixed: Explicitly cloning the Music Assistant mobile-app repository as requested.
 
 name: Build Unsigned iOS IPA
 
@@ -19,11 +19,13 @@ jobs:
   build:
     runs-on: macos-14
     steps:
-      # --- ESTE ES EL PASO QUE HACÍA FALTA ---
-      - name: Checkout Repository
+      # Clonamos explícitamente el repo de la aplicación
+      - name: Checkout Music Assistant Repo
         uses: actions/checkout@v4
         with:
-          submodules: recursive # Por si las moscas con las dependencias de KMP
+          repository: music-assistant/mobile-app
+          ref: dev # O la rama que prefieras compilar
+          submodules: recursive
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -68,7 +70,6 @@ jobs:
       - name: Package IPA (Unsigned)
         run: |
           mkdir -p build/ios/Payload
-          # Buscamos el .app en la ruta por defecto de Xcode
           APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "MusicAssistantClient.app" -type d -print -quit)
           if [ -z "$APP_PATH" ]; then
             echo "Error: No se encontró el archivo .app"
